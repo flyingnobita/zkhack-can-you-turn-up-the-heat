@@ -1,15 +1,15 @@
 use prompt::{puzzle, welcome};
 use winterfell::{
     math::{fields::f128::BaseElement as Felt, FieldElement},
-    Air, AirContext, Assertion, TraceTable, FieldExtension, HashFunction, ProofOptions, Prover,
-    Serializable, TraceInfo, TransitionConstraintDegree, StarkProof, ByteWriter, EvaluationFrame, Trace
+    Air, AirContext, Assertion, ByteWriter, EvaluationFrame, FieldExtension, HashFunction,
+    ProofOptions, Prover, Serializable, StarkProof, Trace, TraceInfo, TraceTable,
+    TransitionConstraintDegree,
 };
-
 
 // PROOF
 // ================================================================================================
 
-/// This is a proof for the correct 32nd term of the Fibonacci sequence; replace it with your 
+/// This is a proof for the correct 32nd term of the Fibonacci sequence; replace it with your
 /// fake proof. NOTE: to build a fake proof you will need to modify Winterfell prover code.
 const PROOF: &str = "\
 02040000100100000000d3ffffffffffffffffffff010800020104058000160bbea2c10bf0e34d992f72cbada22028e203\
@@ -49,7 +49,6 @@ c48273872bdcc9cc79b790e7f6f5cbd06bd27cd9000100000000000000";
 // ================================================================================================
 
 pub fn main() {
-
     welcome();
     puzzle(PUZZLE_DESCRIPTION);
 
@@ -61,13 +60,59 @@ pub fn main() {
     // deserialize proof
     let proof_bytes = hex::decode(PROOF).unwrap();
     let proof = StarkProof::from_bytes(&proof_bytes).unwrap();
-    
+
+    let security_level_conjectured = StarkProof::security_level(&proof, true);
+    // let security_level_provable = StarkProof::security_level(&proof, false);
+
+    println!(
+        "Security level of the proof (conjectured): {} bits",
+        security_level_conjectured
+    );
+
     // initialize public inputs; if we set `end` to 832040 (which is the actual 32nd term of the
     // Fibonacci sequence) the current valid proof will pass.
-    let pub_inputs = FibInputs { start, end: Felt::new(123) };
+    let pub_inputs = FibInputs {
+        start,
+        end: Felt::new(832040),
+    };
 
     // verify the proof; make sure your fake proof doesn't fail this assertion
-    assert!(winterfell::verify::<FibAir>(proof, pub_inputs).is_ok());    
+    assert!(winterfell::verify::<FibAir>(proof, pub_inputs.clone()).is_ok());
+
+    let proof_options = ProofOptions::new(
+        1,
+        usize::pow(2, 3),
+        0,
+        HashFunction::Blake3_192,
+        FieldExtension::None,
+        4,
+        32,
+    );
+
+    let prover_2 = FibProver::new(proof_options);
+    let trace_2 = FibProver::build_trace(start, n);
+    // prover_2.prove(trace)
+    let proof_2 = prover_2.prove(trace_2).unwrap();
+
+    let proof_bytes_2 = StarkProof::to_bytes(&proof_2);
+    let proof_hex_2 = hex::encode(proof_bytes_2);
+    // println!("proof_hex_2: {}", proof_hex_2);
+    // assert_eq!(proof_hex_2, PROOF);
+
+    let security_level_conjectured_2 = StarkProof::security_level(&proof_2, true);
+    println!(
+        "Security level of the proof (conjectured): {} bits",
+        security_level_conjectured_2
+    );
+
+    // initialize public inputs; if we set `end` to 832040 (which is the actual 32nd term of the
+    // Fibonacci sequence) the current valid proof will pass.
+    let pub_inputs_2 = FibInputs {
+        start,
+        end: Felt::new(832040),
+    };
+
+    assert!(winterfell::verify::<FibAir>(proof_2, pub_inputs_2.clone()).is_ok());
 }
 
 // FIBONACCI FUNCTION
@@ -164,13 +209,11 @@ struct FibProver {
 }
 
 impl FibProver {
-
     pub fn new(options: ProofOptions) -> Self {
         Self { options }
     }
 
     pub fn build_trace(start: (Felt, Felt), n: usize) -> TraceTable<Felt> {
-        
         let mut trace = TraceTable::new(2, n / 2);
         trace.fill(
             |state| {
@@ -185,7 +228,6 @@ impl FibProver {
 
         trace
     }
-
 }
 
 impl Prover for FibProver {
